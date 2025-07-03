@@ -1,7 +1,19 @@
 import { NextResponse } from 'next/server';
 import * as https from 'https';
 import * as tls from 'tls';
-import { TLSSocket } from 'tls';
+import { ClientRequest } from 'http'; // 导入类型
+
+interface CertificateInfo {
+  subject: tls.Certificate['subject'];
+  issuer: tls.Certificate['issuer'];
+  subjectaltname?: string;
+  validFrom: string;
+  validTo: string;
+  fingerprint: string;
+  serialNumber: string;
+  pemCertificate: string;
+  daysRemaining: number;
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -12,73 +24,93 @@ export async function GET(request: Request) {
   }
 
   try {
-    const certificate = await fetchSSLCertificate(domain);
+    const certificate = await getCertificateInfoWithHttpRequest(domain);
     return NextResponse.json(certificate);
   } catch (error) {
-    console.error('Error fetching SSL certificate:', error);
+    console.error(`[SSL Fetch Error] for domain ${domain}:`, error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: `Error fetching SSL certificate: ${error instanceof Error ? error.message : String(error)}` },
+      { error: `Failed to fetch SSL certificate for ${domain}. Reason: ${errorMessage}` },
       { status: 500 }
     );
   }
 }
 
-async function fetchSSLCertificate(domain: string): Promise<any> {
+/**
+ * 通过发起一个真实的HTTPS请求来获取SSL证书信息。
+ * 这种方法可以绕过将简单TLS连接视为威胁的安全系统。
+ * 它通过监听底层socket的 'secureConnect' 事件来可靠地获取证书，避免了竞态条件。
+ * @param domain 要查询的域名
+ * @returns Promise<CertificateInfo>
+ */
+function getCertificateInfoWithHttpRequest(domain: string): Promise<CertificateInfo> {
   return new Promise((resolve, reject) => {
     const options = {
-      host: domain,
+      hostname: domain,
       port: 443,
       method: 'GET',
       path: '/',
-      rejectUnauthorized: false, // 允许自签名证书
-      timeout: 10000, // 10秒超时
+      // 伪装成一个常见的浏览器User-Agent，进一步降低被WAF拦截的概率
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
+      },
+      rejectUnauthorized: false, // 允许自签名等证书
+      // 如果服务器使用SNI，这个设置是隐式包含在hostname里的
     };
 
-    const req = https.request(options, (res) => {
-      // 获取证书信息
-      const tlsSocket = res.socket as TLSSocket;
-      const cert = tlsSocket.getPeerCertificate(true);
-      
-      if (!cert || Object.keys(cert).length === 0) {
-        reject(new Error('No certificate found'));
-        return;
-      }
+    const req = https.request(options);
 
-      // 提取关键证书信息
-      const certInfo = {
-        subject: cert.subject,
-        issuer: cert.issuer,
-        validFrom: cert.valid_from,
-        validTo: cert.valid_to,
-        fingerprint: cert.fingerprint,
-        serialNumber: cert.serialNumber,
-        pemCertificate: '',
-      };
+    // 关键！在请求的底层socket上监听 'secureConnect' 事件
+    // 'socket' 事件在socket被分配给请求时触发
+    req.on('socket', (socket: tls.TLSSocket) => {
+      // 监听 'secureConnect'，这是TLS握手完成的确切时机
+      socket.on('secureConnect', () => {
+        const cert = socket.getPeerCertificate(true);
 
-      // 将证书转换为PEM格式并添加到返回数据中
-      if (cert.raw) {
-        const certBuffer = Buffer.from(cert.raw);
-        const pemCert = '-----BEGIN CERTIFICATE-----\n' +
-          (certBuffer.toString('base64').match(/.{1,64}/g)?.join('\n') || '') +
-          '\n-----END CERTIFICATE-----';
-        certInfo.pemCertificate = pemCert;
-      }
+        // 如果握手成功但没有证书，这是个问题
+        if (!cert || Object.keys(cert).length === 0) {
+          req.destroy(); // 清理请求
+          return reject(new Error('Server did not provide a certificate after successful TLS handshake.'));
+        }
 
-      resolve(certInfo);
-      
-      // 终止请求
-      req.abort();
+        const pemCertificate = `-----BEGIN CERTIFICATE-----\n${socket.getPeerCertificate().raw.toString('base64').match(/.{1,64}/g)?.join('\n') || ''}\n-----END CERTIFICATE-----`;
+
+        const validToDate = new Date(cert.valid_to);
+        const now = new Date();
+        const daysRemaining = Math.ceil((validToDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+        const certInfo: CertificateInfo = {
+          subject: cert.subject,
+          issuer: cert.issuer,
+          subjectaltname: cert.subjectaltname,
+          validFrom: cert.valid_from,
+          validTo: cert.valid_to,
+          fingerprint: cert.fingerprint256 || cert.fingerprint,
+          serialNumber: cert.serialNumber,
+          pemCertificate: pemCertificate,
+          daysRemaining: daysRemaining > 0 ? daysRemaining : 0,
+        };
+        
+        // 我们已经拿到了需要的一切，可以安全地中止请求，不再需要等待HTTP响应体
+        req.abort();
+        resolve(certInfo);
+      });
     });
 
-    req.on('error', (error) => {
-      reject(error);
+    // 标准的错误和超时处理
+    req.on('error', (err) => {
+      reject(err);
     });
 
     req.on('timeout', () => {
       req.destroy();
-      reject(new Error('Request timed out'));
+      reject(new Error(`Request to ${domain} timed out after 10 seconds.`));
     });
 
+    // 设置超时
+    req.setTimeout(10000);
+
+    // 发起请求
     req.end();
   });
-} 
+}
