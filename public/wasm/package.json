@@ -1,0 +1,15 @@
+{
+  "name": "wasm-ssl-viewer",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "wasm_ssl_viewer_bg.wasm",
+    "wasm_ssl_viewer.js",
+    "wasm_ssl_viewer.d.ts"
+  ],
+  "main": "wasm_ssl_viewer.js",
+  "types": "wasm_ssl_viewer.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
