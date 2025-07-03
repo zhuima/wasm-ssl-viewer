@@ -1,5 +1,4 @@
 import DashboardLayout from '@/components/ui/Dashboard';
-import WasmSSLViewer from '@/components/wasm/WasmComponent';
 
 export default function DashboardPage() {
   return (

@@ -21,6 +21,7 @@ export default function WasmSSLViewer({ initialDomain = '' }: WasmSSLViewerProps
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [wasmModule, setWasmModule] = useState<any>(null);
   const [domain, setDomain] = useState<string>(initialDomain);
 

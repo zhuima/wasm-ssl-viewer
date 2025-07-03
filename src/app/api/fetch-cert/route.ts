@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
 import * as https from 'https';
 import * as tls from 'tls';
-import { ClientRequest } from 'http'; // 导入类型
 
 interface CertificateInfo {
-  subject: tls.Certificate['subject'];
-  issuer: tls.Certificate['issuer'];
+  subject: tls.PeerCertificate['subject'];
+  issuer: tls.PeerCertificate['issuer'];
   subjectaltname?: string;
   validFrom: string;
   validTo: string;
