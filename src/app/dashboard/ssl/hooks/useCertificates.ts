@@ -114,13 +114,10 @@ export function useCertificates() {
     setIsLoading(true);
     
     try {
-      // 使用requestAnimationFrame确保UI更新后再执行耗时操作
+      // 将耗时操作放到宏任务队列中执行，避免阻塞UI
       return new Promise<boolean>(resolve => {
-        requestAnimationFrame(async () => {
+        setTimeout(async () => {
           try {
-            // 模拟异步操作
-            await new Promise(r => setTimeout(r, 100));
-            
             const now = new Date();
             const validFrom = new Date();
             validFrom.setDate(now.getDate() - Math.floor(Math.random() * 30));
@@ -191,7 +188,7 @@ export function useCertificates() {
           } finally {
             setIsLoading(false);
           }
-        });
+        }, 0);
       });
     } catch (error) {
       setIsLoading(false);
@@ -200,9 +197,11 @@ export function useCertificates() {
     }
   }, []);
 
-  // 删除证书 - 优化为使用requestAnimationFrame
+  // 删除证书 - 优化为使用setTimeout
   const deleteCertificate = useCallback((id: string) => {
-    requestAnimationFrame(() => {
+    setIsLoading(true);
+    
+    setTimeout(() => {
       setCertificates(prevCerts => {
         const updatedCertificates = prevCerts.filter(cert => cert.id !== id);
         
@@ -213,11 +212,12 @@ export function useCertificates() {
           } catch (error) {
             console.error('Error saving to localStorage:', error);
           }
+          setIsLoading(false);
         }, 0);
         
         return updatedCertificates;
       });
-    });
+    }, 0);
   }, []);
 
   // 导入证书 - 优化批处理
@@ -231,9 +231,9 @@ export function useCertificates() {
         throw new Error('导入的文件格式不正确。请提供包含证书数组的JSON文件。');
       }
       
-      // 使用requestAnimationFrame确保UI更新
+      // 使用setTimeout确保UI不会被阻塞
       return new Promise<number>(resolve => {
-        requestAnimationFrame(async () => {
+        setTimeout(async () => {
           try {
             // 使用批处理处理导入的数据
             const processedCertificates = batchProcessCertificates(importedData);
@@ -260,7 +260,7 @@ export function useCertificates() {
           } finally {
             setIsLoading(false);
           }
-        });
+        }, 0);
       });
     } catch (error) {
       setIsLoading(false);
