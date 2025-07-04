@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface SSLCertificate {
   subject: string;
@@ -42,16 +42,8 @@ export default function WasmSSLViewer({ initialDomain = '' }: WasmSSLViewerProps
     initWasm();
   }, []);
 
-  // 当initialDomain变化或组件加载且有initialDomain时，自动查询证书
-  useEffect(() => {
-    if (initialDomain && wasmModule) {
-      setDomain(initialDomain);
-      handleDomainSubmit();
-    }
-  }, [initialDomain, wasmModule]);
-
   // 处理域名提交
-  const handleDomainSubmit = async (e?: React.FormEvent) => {
+  const handleDomainSubmit = useCallback(async (e?: React.FormEvent) => {
     if (e) {
       e.preventDefault();
     }
@@ -109,7 +101,15 @@ export default function WasmSSLViewer({ initialDomain = '' }: WasmSSLViewerProps
     } finally {
       setLoading(false);
     }
-  };
+  }, [domain, wasmModule]);
+
+  // 当initialDomain变化或组件加载且有initialDomain时，自动查询证书
+  useEffect(() => {
+    if (initialDomain && wasmModule) {
+      setDomain(initialDomain);
+      handleDomainSubmit();
+    }
+  }, [initialDomain, wasmModule, handleDomainSubmit]);
 
   // 处理文件上传
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
